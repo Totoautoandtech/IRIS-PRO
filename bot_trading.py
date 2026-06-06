@@ -10,11 +10,12 @@ import logging
 import discord
 from datetime import datetime, timezone
 from discord.ext import commands, tasks
-from utils.market_data  import (MarketData, format_price, format_change,
-                                 get_emoji, market_state_label, format_quote_line)
-from utils.user_settings import UserSettings
-from utils.shared        import pollinations_chat
 
+# --- CORRECTION ICI : On supprime "utils." ---
+from market_data  import (MarketData, format_price, format_change,
+                                  get_emoji, market_state_label, format_quote_line)
+from user_settings import UserSettings
+from shared        import pollinations_chat
 logger = logging.getLogger("BotTrading")
 
 ALERT_COOLDOWN = 5 * 60  # 5 min anti-spam
