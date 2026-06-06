@@ -1,3 +1,7 @@
+import sys
+import os
+# On ajoute le dossier parent au chemin de recherche de Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import asyncio
 import logging
 import os
