@@ -15,10 +15,11 @@ logging.basicConfig(
 logger = logging.getLogger("IRIS_MAIN")
 
 # Import de chaque bot
-from bots.bot_ia       import bot_ia,      setup_ia
-from bots.bot_google   import bot_google,   setup_google
-from bots.bot_trading  import bot_trading,  setup_trading
-from bots.bot_securite import bot_securite, setup_securite
+# Import de chaque bot
+from bot_ia import bot_ia, setup_ia
+from bot_google import bot_google, setup_google
+from bot_trading import bot_trading, setup_trading
+from bot_securite import bot_securite, setup_securite
 
 TOKEN_IA       = os.getenv("DISCORD_TOKEN")
 TOKEN_GOOGLE   = os.getenv("DISCORD_TOKEN_ACTU")
