@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 from google import genai
 from google.genai import types
-from utils.shared import safe_send, BROWSER_HEADERS
+from shared import safe_send, BROWSER_HEADERS
 
 logger = logging.getLogger("BotGoogle")
 
