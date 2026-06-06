@@ -9,7 +9,7 @@ import logging
 import discord
 from discord.ext import commands
 from google import genai
-from utils.shared import safe_send
+from shared import safe_send
 
 logger = logging.getLogger("BotIA")
 
