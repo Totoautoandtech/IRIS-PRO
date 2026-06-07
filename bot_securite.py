@@ -10,7 +10,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import discord
 from discord.ext import commands, tasks
-
+# Au tout début de bot_securite.py (après tes imports) :
+intents = discord.Intents.all()
+bot_securite = commands.Bot(command_prefix="!sec ", intents=intents, help_command=None)
 logger   = logging.getLogger("BotSecurite")
 CFG_PATH = Path(__file__).parent / "data" / "securite.json"
 
