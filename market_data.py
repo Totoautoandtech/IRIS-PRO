@@ -1,6 +1,6 @@
 """
-utils/market_data.py
-Récupération des données boursières via Yahoo Finance.
+market_data.py — Données Yahoo Finance.
+Placé à la RACINE du projet.
 Cache 20s, requêtes parallèles, headers anti-blocage.
 """
 import asyncio
@@ -15,8 +15,9 @@ YF_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary"
 
 YF_HEADERS = {
     "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept":          "application/json",
-    "Accept-Language": "fr-FR,fr;q=0.9",
+    "Accept":          "application/json, text/plain, */*",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+    "Referer":         "https://finance.yahoo.com/",
 }
 
 CACHE_TTL       = 20
@@ -32,23 +33,20 @@ class MarketData:
     def start(self):
         self._running = True
         asyncio.create_task(self._preload_loop())
-        logger.info("📊 MarketData démarré (cache 20s, requêtes parallèles)")
+        logger.info("📊 MarketData démarré")
 
     async def _get_session(self) -> aiohttp.ClientSession:
+        # Connecteur créé ici (dans la boucle asyncio) pour éviter RuntimeError
         if self._session is None or self._session.closed:
             connector     = aiohttp.TCPConnector(limit=20, ttl_dns_cache=300)
             self._session = aiohttp.ClientSession(headers=YF_HEADERS, connector=connector)
         return self._session
 
     async def _preload_loop(self):
-        """Précharge les symboles populaires en parallèle par batch de 5."""
         while self._running:
             for i in range(0, len(PRELOAD_SYMBOLS), 5):
                 batch = PRELOAD_SYMBOLS[i:i + 5]
-                await asyncio.gather(
-                    *[self.get_quote(s, force=True) for s in batch],
-                    return_exceptions=True
-                )
+                await asyncio.gather(*[self.get_quote(s, force=True) for s in batch], return_exceptions=True)
                 await asyncio.sleep(1)
             await asyncio.sleep(20)
 
@@ -60,7 +58,7 @@ class MarketData:
         try:
             session = await self._get_session()
             url     = f"{YF_CHART}/{key}?interval=1d&range=1d"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status != 200:
                     return cached["data"] if cached else None
                 raw = await resp.json(content_type=None)
@@ -68,7 +66,6 @@ class MarketData:
             result = (raw.get("chart") or {}).get("result") or []
             if not result:
                 return None
-
             meta  = result[0]["meta"]
             prev  = (meta.get("previousClose")
                      or meta.get("chartPreviousClose")
@@ -76,8 +73,7 @@ class MarketData:
             price = meta.get("regularMarketPrice", 0)
             chg   = price - prev if prev else 0
             chgp  = (chg / prev * 100) if prev else 0
-
-            data = {
+            data  = {
                 "symbol":        meta.get("symbol", key),
                 "name":          meta.get("longName") or meta.get("shortName") or key,
                 "price":         price,
@@ -93,7 +89,6 @@ class MarketData:
             }
             self._cache[key] = {"data": data, "ts": time.time()}
             return data
-
         except Exception as e:
             logger.error(f"get_quote {symbol}: {e}")
             return cached["data"] if cached else None
@@ -105,15 +100,13 @@ class MarketData:
         try:
             session = await self._get_session()
             url     = f"{YF_SUMMARY}/{symbol}?modules=summaryDetail,price"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status != 200:
                     return base
                 raw = await resp.json(content_type=None)
-
             result_list = ((raw.get("quoteSummary") or {}).get("result")) or []
             if not result_list:
                 return base
-
             detail  = result_list[0]
             price   = detail.get("price", {})
             summary = detail.get("summaryDetail", {})
@@ -130,10 +123,7 @@ class MarketData:
     async def get_multiple(self, symbols: list) -> list:
         if not symbols:
             return []
-        results = await asyncio.gather(
-            *[self.get_quote(s) for s in symbols],
-            return_exceptions=True
-        )
+        results = await asyncio.gather(*[self.get_quote(s) for s in symbols], return_exceptions=True)
         return [r for r in results if r and not isinstance(r, Exception)]
 
     async def is_valid(self, symbol: str) -> bool:
@@ -143,13 +133,11 @@ class MarketData:
 
 # ── Fonctions de formatage ────────────────────────────────
 def format_price(price) -> str:
-    if price is None:
-        return "N/A"
+    if price is None: return "N/A"
     return f"{price:,.2f}".replace(",", " ").replace(".", ",")
 
 def format_change(value) -> str:
-    if value is None:
-        return "N/A"
+    if value is None: return "N/A"
     sign = "+" if value >= 0 else ""
     return f"{sign}{value:.2f}"
 
@@ -177,8 +165,7 @@ def format_quote_line(q: dict) -> str:
     chg   = format_change(q.get("changePercent", 0))
     sign  = "+" if q.get("changePercent", 0) >= 0 else ""
     name  = q.get("name", q["symbol"])
-    if len(name) > 22:
-        name = q["symbol"]
+    if len(name) > 22: name = q["symbol"]
     cur   = q.get("currency", "")
     vol   = q.get("volume", 0)
     vol_s = (f"{vol/1_000_000:.1f}M" if vol >= 1_000_000
@@ -187,4 +174,5 @@ def format_quote_line(q: dict) -> str:
     return (
         f"{emoji} **{q['symbol']}** · `{price} {cur}` · `{sign}{chg}%`\n"
         f"┗ Vol: `{vol_s}` · _{name}_"
+    )
     )
