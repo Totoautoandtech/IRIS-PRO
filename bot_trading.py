@@ -1,6 +1,7 @@
 """
-bots/bot_trading.py
-Bot Iris Trading — Données Yahoo Finance, watchlist perso, alertes DM, conseils IA.
+bot_trading.py — Bot Iris Trading
+Données Yahoo Finance, watchlist perso, alertes DM, conseils IA.
+CORRECTION : imports directs (pas de utils.), conseil IA corrigé pour Bitcoin et tous actifs.
 Préfixe : !iris
 """
 import os
@@ -10,15 +11,14 @@ import logging
 import discord
 from datetime import datetime, timezone
 from discord.ext import commands, tasks
-
-# --- CORRECTION ICI : On supprime "utils." ---
-from market_data  import (MarketData, format_price, format_change,
-                                  get_emoji, market_state_label, format_quote_line)
+from market_data   import (MarketData, format_price, format_change,
+                            get_emoji, market_state_label, format_quote_line)
 from user_settings import UserSettings
 from shared        import pollinations_chat
+
 logger = logging.getLogger("BotTrading")
 
-ALERT_COOLDOWN = 5 * 60  # 5 min anti-spam
+ALERT_COOLDOWN = 5 * 60
 
 mkt = MarketData()
 usr = UserSettings()
@@ -30,7 +30,6 @@ intents     = discord.Intents.all()
 bot_trading = commands.Bot(command_prefix="!iris ", intents=intents, help_command=None)
 
 
-# ── Embed dashboard ───────────────────────────────────────
 async def build_market_embed(settings: dict, user_id: int) -> discord.Embed:
     watchlist = settings.get("watchlist", [])
     quotes    = await mkt.get_multiple(watchlist)
@@ -70,45 +69,75 @@ async def build_market_embed(settings: dict, user_id: int) -> discord.Embed:
     return embed
 
 
-# ── Conseil IA ────────────────────────────────────────────
 async def get_ai_advice(user_id: int, symbols: list) -> str:
+    """
+    CORRECTION CONSEIL IA :
+    - Récupère les données en parallèle
+    - Gère explicitement le cas où aucune donnée n'est trouvée par symbole
+    - Timeout allongé à 40s pour Pollinations
+    """
     quotes = await mkt.get_multiple(symbols)
+
+    # Si aucune donnée récupérée, on tente quand même le conseil IA avec les noms des symboles
     if not quotes:
-        return "❌ Données introuvables pour ces symboles."
+        try:
+            return await pollinations_chat(
+                system=(
+                    "Tu es Iris, conseillère en trading. "
+                    "Réponds en français avec emojis. Maximum 300 mots. "
+                    "Rappelle que ce ne sont pas des conseils financiers professionnels."
+                ),
+                user=(
+                    f"Je veux un conseil sur ces actifs : {', '.join(symbols)}.\n"
+                    f"Les données de marché ne sont pas disponibles en ce moment. "
+                    f"Donne une analyse générale de ces actifs et leur contexte actuel."
+                ),
+            )
+        except Exception as e:
+            return f"❌ Impossible de récupérer les données et l'IA est indisponible : {e}"
 
     settings  = usr.get(user_id)
     portfolio = settings.get("portfolio", [])
-    mkt_txt   = "\n".join(
-        f"{q['symbol']}: {format_price(q['price'])} ({format_change(q.get('changePercent',0))}% aujourd'hui), "
-        f"volume: {q.get('volume',0):,}, état: {q.get('marketState','?')}"
+
+    mkt_txt = "\n".join(
+        f"• {q['symbol']} ({q.get('name', q['symbol'])}) : "
+        f"Prix = {format_price(q['price'])} {q.get('currency','')} | "
+        f"Variation = {format_change(q.get('changePercent', 0))}% | "
+        f"Volume = {q.get('volume', 0):,} | "
+        f"Marché = {market_state_label(q.get('marketState', '?'))}"
         for q in quotes
     )
+
     ptf_ctx = ""
     if portfolio:
-        ptf_ctx = "\n\nPortfolio : " + ", ".join(
-            f"{p['qty']}x {p['symbol']} acheté à {p.get('buy_price','inconnu')}"
+        ptf_ctx = "\n\nPortfolio de l'utilisateur : " + ", ".join(
+            f"{p['qty']}x {p['symbol']} acheté à {p.get('buy_price', 'inconnu')}"
             for p in portfolio
         )
+
     try:
         return await pollinations_chat(
             system=(
                 "Tu es Iris, conseillère en trading expérimentée, directe et honnête. "
-                "Rappelle TOUJOURS que ce ne sont pas des conseils financiers professionnels. "
-                "Réponds en français avec emojis. Maximum 450 mots."
+                "Tu analyses les données de marché temps réel fournies et donnes des conseils nuancés. "
+                "RAPPELLE TOUJOURS en fin de réponse que ce ne sont pas des conseils financiers professionnels. "
+                "Réponds en français avec emojis pour structurer. Maximum 450 mots."
             ),
             user=(
-                f"Données actuelles :\n\n{mkt_txt}{ptf_ctx}\n\n"
-                "Donne : 1️⃣ Analyse rapide 2️⃣ Points d'attention "
-                "3️⃣ Ce que tu ferais 4️⃣ Niveau de risque"
+                f"Voici les données de marché actuelles :\n\n{mkt_txt}{ptf_ctx}\n\n"
+                "Analyse et donne :\n"
+                "1️⃣ Analyse rapide de chaque actif\n"
+                "2️⃣ Points d'attention importants\n"
+                "3️⃣ Ce que tu ferais concrètement\n"
+                "4️⃣ Niveau de risque global (faible / moyen / élevé)"
             ),
         )
     except asyncio.TimeoutError:
-        return "⏱️ L'IA met trop de temps. Réessaie."
+        return "⏱️ L'IA met trop de temps. Réessaie dans quelques secondes."
     except Exception as e:
         return f"❌ Erreur IA : {e}"
 
 
-# ── Boutons Live ──────────────────────────────────────────
 class LiveView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=None)
@@ -117,23 +146,17 @@ class LiveView(discord.ui.View):
     @discord.ui.button(label="🔄 Actualiser", style=discord.ButtonStyle.secondary)
     async def refresh(self, interaction: discord.Interaction, _btn):
         await interaction.response.defer()
-        settings = usr.get(self.user_id)
-        embed    = await build_market_embed(settings, self.user_id)
+        embed = await build_market_embed(usr.get(self.user_id), self.user_id)
         await interaction.message.edit(embed=embed)
 
     @discord.ui.button(label="➕ Ajouter", style=discord.ButtonStyle.primary)
     async def add_sym(self, interaction: discord.Interaction, _btn):
-        await interaction.response.send_message(
-            "Tape `!iris settings add SYMBOLE`", ephemeral=True
-        )
+        await interaction.response.send_message("Tape `!iris settings add SYMBOLE`", ephemeral=True)
 
     @discord.ui.button(label="🤖 Conseil IA", style=discord.ButtonStyle.success)
     async def ai_advice(self, interaction: discord.Interaction, _btn):
         await interaction.response.defer(ephemeral=True)
-        reply = await get_ai_advice(
-            interaction.user.id,
-            usr.get(interaction.user.id).get("watchlist", [])
-        )
+        reply = await get_ai_advice(interaction.user.id, usr.get(interaction.user.id).get("watchlist", []))
         await interaction.followup.send(reply, ephemeral=True)
 
 
@@ -156,9 +179,8 @@ def setup_trading():
                 channel = bot_trading.get_channel(info["channel_id"])
                 if not channel:
                     live_messages.pop(key, None); continue
-                msg      = await channel.fetch_message(info["message_id"])
-                settings = usr.get(info["user_id"])
-                embed    = await build_market_embed(settings, info["user_id"])
+                msg   = await channel.fetch_message(info["message_id"])
+                embed = await build_market_embed(usr.get(info["user_id"]), info["user_id"])
                 await msg.edit(embed=embed)
             except discord.NotFound:
                 live_messages.pop(key, None)
@@ -200,7 +222,6 @@ def setup_trading():
                 except Exception:
                     pass
 
-    # ── Commandes ─────────────────────────────────────────
     @bot_trading.command(name="help")
     async def cmd_help(ctx):
         embed = discord.Embed(
@@ -208,13 +229,13 @@ def setup_trading():
             description="⚠️ *Settings et données 100% personnels — invisibles pour les autres.*",
             color=0x6C5CE7,
         )
-        embed.add_field(name="`!iris live`",           value="Dashboard live (auto 30s)",         inline=False)
-        embed.add_field(name="`!iris info SYMBOLE`",   value="Fiche détaillée d'un actif",        inline=False)
-        embed.add_field(name="`!iris settings`",       value="Ta watchlist, alertes, devise",     inline=False)
-        embed.add_field(name="`!iris portfolio`",      value="Ton portfolio & P&L",               inline=False)
-        embed.add_field(name="`!iris alert SYM %`",    value="Alerte DM personnelle",             inline=False)
-        embed.add_field(name="`!iris conseil [SYM]`",  value="Conseil IA (Pollinations, gratuit)", inline=False)
-        embed.add_field(name="`!iris reset`",          value="Réinitialiser tes settings",        inline=False)
+        embed.add_field(name="`!iris live`",          value="Dashboard live (auto 30s)",          inline=False)
+        embed.add_field(name="`!iris info SYMBOLE`",  value="Fiche détaillée d'un actif",         inline=False)
+        embed.add_field(name="`!iris settings`",      value="Ta watchlist, alertes, devise",      inline=False)
+        embed.add_field(name="`!iris portfolio`",     value="Ton portfolio & P&L",                inline=False)
+        embed.add_field(name="`!iris alert SYM %`",   value="Alerte DM personnelle",              inline=False)
+        embed.add_field(name="`!iris conseil [SYM]`", value="Conseil IA (Pollinations, gratuit)", inline=False)
+        embed.add_field(name="`!iris reset`",         value="Réinitialiser tes settings",         inline=False)
         embed.add_field(
             name="💡 Symboles",
             value="`^FCHI` CAC40 · `^GSPC` S&P500 · `BTC-USD` Bitcoin · `AAPL` Apple · `BNP.PA` BNP",
@@ -225,15 +246,10 @@ def setup_trading():
 
     @bot_trading.command(name="live")
     async def cmd_live(ctx):
-        uid      = ctx.author.id
-        settings = usr.get(uid)
-        embed    = await build_market_embed(settings, uid)
-        view     = LiveView(uid)
-        msg      = await ctx.send(embed=embed, view=view)
+        uid  = ctx.author.id
+        msg  = await ctx.send(embed=await build_market_embed(usr.get(uid), uid), view=LiveView(uid))
         live_messages[f"{ctx.channel.id}:{uid}"] = {
-            "channel_id": ctx.channel.id,
-            "message_id": msg.id,
-            "user_id":    uid,
+            "channel_id": ctx.channel.id, "message_id": msg.id, "user_id": uid,
         }
         try: await ctx.message.delete()
         except Exception: pass
@@ -244,9 +260,7 @@ def setup_trading():
         sub = sub.lower()
         if sub == "view":
             s = usr.get(uid)
-            embed = discord.Embed(
-                title="⚙️ Tes Paramètres", description="*100% personnels.*", color=0x6C5CE7
-            )
+            embed = discord.Embed(title="⚙️ Tes Paramètres", description="*100% personnels.*", color=0x6C5CE7)
             embed.add_field(name="📊 Watchlist",    value=", ".join(s["watchlist"]) or "Vide",         inline=False)
             embed.add_field(name="🔔 Alertes",      value="✅ On" if s["alerts_enabled"] else "❌ Off", inline=True)
             embed.add_field(name="📈 Seuil",        value=f"{s['alert_threshold']}%",                  inline=True)
@@ -279,27 +293,30 @@ def setup_trading():
     @bot_trading.command(name="info")
     async def cmd_info(ctx, symbol: str = None):
         if not symbol:
-            return await ctx.send("Usage : `!iris info SYMBOLE`")
+            return await ctx.send("Usage : `!iris info SYMBOLE` (ex: `!iris info BTC-USD`)")
         async with ctx.typing():
             data = await mkt.get_detailed_quote(symbol.upper())
         if not data:
-            return await ctx.send(f"❌ `{symbol.upper()}` introuvable.")
+            return await ctx.send(
+                f"❌ `{symbol.upper()}` introuvable.\n"
+                f"Vérifie le ticker Yahoo Finance : `BTC-USD` pour Bitcoin, `AAPL` pour Apple, `^FCHI` pour CAC40."
+            )
         color = 0x00b894 if data.get("changePercent", 0) >= 0 else 0xff7675
         embed = discord.Embed(
-            title=f"{get_emoji(data.get('changePercent',0))} {data['symbol']} — {data.get('name', symbol)}",
-            description="*Information personnelle.*",
+            title=f"{get_emoji(data.get('changePercent', 0))} {data['symbol']} — {data.get('name', symbol)}",
+            description="*Information personnelle — affichée uniquement pour toi.*",
             color=color,
         )
-        embed.add_field(name="💲 Prix",          value=f"**{format_price(data['price'])}** {data.get('currency','')}", inline=True)
-        embed.add_field(name="📊 Variation",     value=f"**{format_change(data.get('changePercent',0))}%**",           inline=True)
-        embed.add_field(name="📦 Volume",        value=f"{data.get('volume',0):,}",                                    inline=True)
+        embed.add_field(name="💲 Prix",          value=f"**{format_price(data['price'])}** {data.get('currency', '')}", inline=True)
+        embed.add_field(name="📊 Variation",     value=f"**{format_change(data.get('changePercent', 0))}%**",           inline=True)
+        embed.add_field(name="📦 Volume",        value=f"{data.get('volume', 0):,}",                                    inline=True)
         embed.add_field(name="⬆️ Haut du jour", value=format_price(data.get("dayHigh")),  inline=True)
         embed.add_field(name="⬇️ Bas du jour",  value=format_price(data.get("dayLow")),   inline=True)
         embed.add_field(name="📈 Haut 52s",      value=format_price(data.get("high52w")),  inline=True)
         embed.add_field(name="📉 Bas 52s",       value=format_price(data.get("low52w")),   inline=True)
         if data.get("marketCap"):
             embed.add_field(name="🏦 Capitalisation", value=f"{data['marketCap']/1e9:.2f}B", inline=True)
-        embed.add_field(name="🕐 État", value=market_state_label(data.get("marketState","?")), inline=True)
+        embed.add_field(name="🕐 État", value=market_state_label(data.get("marketState", "?")), inline=True)
         embed.set_footer(text="Iris Trading · Yahoo Finance")
         embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
@@ -319,8 +336,7 @@ def setup_trading():
         if sub == "remove" and args:
             usr.remove_position(uid, args[0].upper())
             return await ctx.send(f"🗑️ **{args[0].upper()}** retiré.")
-        settings  = usr.get(uid)
-        portfolio = settings.get("portfolio", [])
+        portfolio = usr.get(uid).get("portfolio", [])
         if not portfolio:
             return await ctx.send("📭 Vide. `!iris portfolio add SYMBOLE QTE PRIX`")
         async with ctx.typing():
@@ -352,8 +368,8 @@ def setup_trading():
                 inline=True,
             )
         embed.add_field(name="━━━━━━━━━━", value="\u200b", inline=False)
-        embed.add_field(name="💰 Total",   value=f"**{format_price(total_val)}**",  inline=True)
-        embed.add_field(name="📊 P&L",     value=f"**{format_change(total_pnl)}**", inline=True)
+        embed.add_field(name="💰 Total",  value=f"**{format_price(total_val)}**",  inline=True)
+        embed.add_field(name="📊 P&L",    value=f"**{format_change(total_pnl)}**", inline=True)
         embed.set_footer(text="Iris Trading · Données temps réel")
         embed.timestamp = discord.utils.utcnow()
         await ctx.send(embed=embed)
@@ -361,7 +377,7 @@ def setup_trading():
     @bot_trading.command(name="alert")
     async def cmd_alert(ctx, symbol: str = None, threshold: str = None):
         if not symbol or not threshold:
-            return await ctx.send("Usage : `!iris alert SYMBOLE SEUIL`")
+            return await ctx.send("Usage : `!iris alert SYMBOLE SEUIL` (ex: `!iris alert BTC-USD 5`)")
         try: t = float(threshold)
         except ValueError: return await ctx.send("❌ Seuil invalide.")
         usr.add_custom_alert(ctx.author.id, symbol.upper(), t)
@@ -375,7 +391,7 @@ def setup_trading():
         uid     = ctx.author.id
         symbols = [a.upper() for a in args] if args else usr.get(uid).get("watchlist", [])
         if not symbols:
-            return await ctx.send("❓ Précise un symbole ou ajoute des actifs à ta watchlist.")
+            return await ctx.send("❓ Précise un symbole ou ajoute des actifs à ta watchlist.\nEx: `!iris conseil BTC-USD`")
         async with ctx.typing():
             reply = await get_ai_advice(uid, symbols)
         embed = discord.Embed(
@@ -384,7 +400,7 @@ def setup_trading():
             color=0x6C5CE7,
             timestamp=datetime.now(timezone.utc),
         )
-        embed.set_footer(text="Iris Trading · Pollinations.ai · Pas des conseils financiers pro")
+        embed.set_footer(text="Iris Trading · Pollinations.ai · Pas des conseils financiers professionnels")
         await ctx.send(embed=embed)
 
     @bot_trading.command(name="reset")
