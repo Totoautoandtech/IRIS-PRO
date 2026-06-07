@@ -19,7 +19,8 @@ logger = logging.getLogger("IRIS_MAIN")
 from bot_ia import bot_ia, setup_ia
 from bot_google import bot_google, setup_google
 from bot_trading import bot_trading, setup_trading
-from bot_securite import bot_securite, setup_securite
+# METS CELLE-CI À LA PLACE :
+from bot_securite import setup_securite
 
 TOKEN_IA       = os.getenv("DISCORD_TOKEN")
 TOKEN_GOOGLE   = os.getenv("DISCORD_TOKEN_ACTU")
