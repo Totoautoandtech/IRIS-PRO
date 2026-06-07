@@ -1,6 +1,6 @@
 """
-bots/bot_google.py
-Bot Iris Google — Navigateur Discord via Gemini Google Search Grounding.
+bot_google.py — Bot Iris Google
+Navigateur Discord via Gemini Google Search Grounding.
 Préfixe : !google
 """
 import os
@@ -34,23 +34,20 @@ def setup_google():
     async def on_ready():
         logger.info(f"🌐 Iris Google connectée : {bot_google.user}")
         await bot_google.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching, name="le web 🌍"
-            )
+            activity=discord.Activity(type=discord.ActivityType.watching, name="le web 🌍")
         )
 
-    # ── Commandes ─────────────────────────────────────────
     @bot_google.command(name="help")
     async def google_help(ctx):
         embed = discord.Embed(
             title="🌐 Iris Google — Aide",
-            description="Navigateur Discord alimenté par Gemini + Google Search.",
+            description="Navigateur Discord · Gemini + Google Search Grounding",
             color=0x4285F4,
         )
-        embed.add_field(name="`!google cherche REQUÊTE`",  value="Recherche Google via Gemini (résultats actuels)", inline=False)
-        embed.add_field(name="`!google visite URL`",       value="Lire et résumer le contenu d'une page web",       inline=False)
-        embed.add_field(name="`!google actu [SUJET]`",     value="Actualités récentes sur un sujet",                inline=False)
-        embed.add_field(name="`!google wiki SUJET`",       value="Résumé Wikipédia d'un sujet",                     inline=False)
+        embed.add_field(name="`!google cherche REQUÊTE`", value="Recherche Google via Gemini (résultats actuels)", inline=False)
+        embed.add_field(name="`!google visite URL`",      value="Lire et résumer le contenu d'une page web",       inline=False)
+        embed.add_field(name="`!google actu [SUJET]`",    value="Actualités récentes sur un sujet",                inline=False)
+        embed.add_field(name="`!google wiki SUJET`",      value="Résumé Wikipédia d'un sujet",                     inline=False)
         embed.set_footer(text="Iris Google · Gemini 2.5 Flash + Google Search Grounding")
         await ctx.send(embed=embed)
 
@@ -70,16 +67,12 @@ def setup_google():
                     contents=f"Recherche et résume les informations actuelles sur : {recherche}. Réponds en français.",
                     config=config,
                 )
+                text  = response.text or "Aucun résultat."
                 embed = discord.Embed(
-                    title=f"🔍 Résultats Google — {recherche[:60]}",
+                    title=f"🔍 Résultats — {recherche[:60]}",
+                    description=text[:4000] + ("..." if len(text) > 4000 else ""),
                     color=0x4285F4,
                 )
-                # Découpe si trop long pour un embed
-                text = response.text or "Aucun résultat."
-                if len(text) > 4000:
-                    embed.description = text[:4000] + "..."
-                else:
-                    embed.description = text
                 embed.set_footer(text="Iris Google · Google Search Grounding · Gemini 2.5 Flash")
                 await ctx.send(embed=embed)
             except Exception as e:
@@ -93,7 +86,6 @@ def setup_google():
             url = "https://" + url
         async with ctx.typing():
             try:
-                # Headers navigateur pour éviter les 403
                 async with aiohttp.ClientSession(headers=BROWSER_HEADERS) as session:
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=12)) as resp:
                         if resp.status != 200:
@@ -102,27 +94,22 @@ def setup_google():
                                 f"_Le site bloque les bots ou la page n'existe pas._"
                             )
                         raw_html = await resp.text()
-
                 if not ai_client:
                     return await ctx.send("❌ Gemini non disponible.")
-
                 prompt   = (
                     f"Tu es un navigateur web. Extrais et résume le contenu principal "
-                    f"de cette page en Markdown clair. Ignore les menus, publicités et scripts.\n\n"
+                    f"de cette page en Markdown clair. Ignore menus, pubs et scripts.\n\n"
                     f"{raw_html[:15000]}"
                 )
-                response = ai_client.models.generate_content(
-                    model="gemini-2.5-flash", contents=prompt
-                )
-                embed = discord.Embed(
-                    title=f"🖥️ Page visitée",
-                    description=f"[{url}]({url})",
+                response = ai_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                embed    = discord.Embed(
+                    title="🖥️ Page visitée",
+                    description=f"[{url[:100]}]({url})",
                     color=0x4285F4,
                 )
                 embed.set_footer(text="Iris Google · Résumé IA de la page")
                 await ctx.send(embed=embed)
                 await safe_send(ctx, response.text)
-
             except aiohttp.ClientConnectorError:
                 await ctx.send(f"❌ Impossible de se connecter à `{url}`. Vérifie l'URL.")
             except Exception as e:
@@ -147,7 +134,7 @@ def setup_google():
                 )
                 embed = discord.Embed(
                     title=f"📰 Actualités — {sujet[:60]}",
-                    description=response.text[:4000] if response.text else "Aucun résultat.",
+                    description=(response.text or "Aucun résultat.")[:4000],
                     color=0x0984E3,
                 )
                 embed.set_footer(text="Iris Google · Google Search · Données actuelles")
@@ -176,7 +163,7 @@ def setup_google():
                 )
                 embed = discord.Embed(
                     title=f"📖 Wikipedia — {sujet[:60]}",
-                    description=response.text[:4000] if response.text else "Aucun résultat.",
+                    description=(response.text or "Aucun résultat.")[:4000],
                     color=0xA29BFE,
                 )
                 embed.set_footer(text="Iris Google · Résumé Wikipedia via Gemini")
