@@ -2,7 +2,6 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 import asyncio
 import logging
-import os
 from aiohttp import web
 from dotenv import load_dotenv
 
@@ -14,13 +13,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("IRIS_MAIN")
 
-# Import de chaque bot
-# Import de chaque bot
+# Import de chaque bot (Variables du bot + Fonctions setup)
 from bot_ia import bot_ia, setup_ia
 from bot_google import bot_google, setup_google
 from bot_trading import bot_trading, setup_trading
-# METS CELLE-CI À LA PLACE :
-from bot_securite import setup_securite
+from bot_securite import bot_securite, setup_securite  # Importation corrigée ici !
 
 TOKEN_IA       = os.getenv("DISCORD_TOKEN")
 TOKEN_GOOGLE   = os.getenv("DISCORD_TOKEN_ACTU")
@@ -46,12 +43,17 @@ async def main():
     logger.info("🚀 Démarrage Iris Multi-Bot...")
     await start_web_server()
 
-    # Setup (enregistre les commandes/events de chaque bot)
-    setup_ia()
-    setup_google()
-    setup_trading()
-    setup_securite()
+    # CORRECTION : On passe chaque bot à sa fonction de setup respective
+    if TOKEN_IA:
+        setup_ia(bot_ia)
+    if TOKEN_GOOGLE:
+        setup_google(bot_google)
+    if TOKEN_TRADING:
+        setup_trading(bot_trading)
+    if TOKEN_SECURITE:
+        setup_securite(bot_securite)  # Le paramètre manquant est résolu ici !
 
+    # Lancement de toutes les tâches en parallèle
     bots = []
     if TOKEN_IA:       bots.append(bot_ia.start(TOKEN_IA))
     if TOKEN_GOOGLE:   bots.append(bot_google.start(TOKEN_GOOGLE))
