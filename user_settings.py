@@ -1,6 +1,6 @@
 """
-utils/user_settings.py
-Sauvegarde persistante des paramètres par utilisateur (JSON local).
+user_settings.py — Mémoire persistante par utilisateur.
+Placé à la RACINE du projet.
 """
 import json
 import os
@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 logger  = logging.getLogger("UserSettings")
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "users.json")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "users.json")
 
 DEFAULT_SETTINGS = {
     "watchlist":       ["^FCHI", "^GSPC", "BTC-USD", "AAPL"],
@@ -46,10 +46,7 @@ class UserSettings:
     def get(self, user_id: int) -> dict:
         uid = int(user_id)
         if uid not in self._data:
-            self._data[uid] = {
-                **DEFAULT_SETTINGS,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
+            self._data[uid] = {**DEFAULT_SETTINGS, "created_at": datetime.now(timezone.utc).isoformat()}
             self._save()
         return {**DEFAULT_SETTINGS, **self._data[uid]}
 
@@ -71,12 +68,8 @@ class UserSettings:
     def add_position(self, user_id: int, symbol: str, qty: float, buy_price=None):
         s         = self.get(user_id)
         portfolio = [p for p in s["portfolio"] if p["symbol"] != symbol]
-        portfolio.append({
-            "symbol":    symbol,
-            "qty":       qty,
-            "buy_price": buy_price,
-            "added_at":  datetime.now(timezone.utc).isoformat(),
-        })
+        portfolio.append({"symbol": symbol, "qty": qty, "buy_price": buy_price,
+                          "added_at": datetime.now(timezone.utc).isoformat()})
         self.update(user_id, {"portfolio": portfolio})
 
     def remove_position(self, user_id: int, symbol: str):
@@ -90,10 +83,7 @@ class UserSettings:
         self.update(user_id, {"custom_alerts": alerts})
 
     def reset(self, user_id: int):
-        self._data[int(user_id)] = {
-            **DEFAULT_SETTINGS,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
+        self._data[int(user_id)] = {**DEFAULT_SETTINGS, "created_at": datetime.now(timezone.utc).isoformat()}
         self._save()
 
     def get_all(self):
