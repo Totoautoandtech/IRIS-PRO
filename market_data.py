@@ -175,4 +175,4 @@ def format_quote_line(q: dict) -> str:
         f"{emoji} **{q['symbol']}** · `{price} {cur}` · `{sign}{chg}%`\n"
         f"┗ Vol: `{vol_s}` · _{name}_"
     )
-    )
+    
